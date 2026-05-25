@@ -8,26 +8,23 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # ========================= CONFIG =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_USERNAME = "@OfficialLavishz"
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))  
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))  # Put your real numeric ID here
 
 PAYMENT_PROCESSING_MSG = "⏳ Payment processing. Admin will verify your payment shortly."
 
 # ==================== PAYMENT LINKS ====================
 PRICE_LINKS = {
-    30: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-30-usd-by-rewarble-key-global-i10000505309025"},
-    40: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-40-usd-by-rewarble-key-global-i10000505309069"},
-    50: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-50-usd-by-rewarble-key-global-i10000505309003"},
-    60: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-60-usd-by-rewarble-key-global-i10000505309071"},
-    70: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-70-usd-by-rewarble-key-global-i10000505309092"},
-    80: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-80-usd-by-rewarble-key-global-i10000505309093"},
-    90: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-90-usd-by-rewarble-key-global-i10000505309094"},
-    100: {"name": "Payment Link", "link": "https://www.g2a.com/rewarble-crypto-gift-card-100-usd-by-rewarble-key-global-i10000505309004"},
+    30: "https://www.g2a.com/rewarble-crypto-gift-card-30-usd-by-rewarble-key-global-i10000505309025",
+    40: "https://www.g2a.com/rewarble-crypto-gift-card-40-usd-by-rewarble-key-global-i10000505309069",
+    50: "https://www.g2a.com/rewarble-crypto-gift-card-50-usd-by-rewarble-key-global-i10000505309003",
+    60: "https://www.g2a.com/rewarble-crypto-gift-card-60-usd-by-rewarble-key-global-i10000505309071",
+    70: "https://www.g2a.com/rewarble-crypto-gift-card-70-usd-by-rewarble-key-global-i10000505309092",
+    80: "https://www.g2a.com/rewarble-crypto-gift-card-80-usd-by-rewarble-key-global-i10000505309093",
+    90: "https://www.g2a.com/rewarble-crypto-gift-card-90-usd-by-rewarble-key-global-i10000505309094",
+    100: "https://www.g2a.com/rewarble-crypto-gift-card-100-usd-by-rewarble-key-global-i10000505309004",
 }
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 orders = {}
@@ -77,11 +74,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "subtotal": subtotal,
             }
             await show_cart(update, context)
+            return
         except Exception as e:
             logger.error(f"Cart decode error: {e}")
-            await update.message.reply_text("❌ Invalid cart data.")
-    else:
-        await update.message.reply_text("👋 Welcome to Lavish Checkout Bot!")
+
+    # Normal start
+    keyboard = [
+        [InlineKeyboardButton("💳 Checkout", callback_data="checkout")],
+        [InlineKeyboardButton("⚠️ Support", callback_data="support")]
+    ]
+    await update.message.reply_text(
+        "👋 Welcome to **Lavish Checkout**!\n\nChoose an option below:", 
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
 
 async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -96,8 +102,8 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"\n**Total: ${order['subtotal']}**"
 
     keyboard = [
-        [InlineKeyboardButton("✅ Checkout", callback_data="checkout")],
-        [InlineKeyboardButton("🛠 Support", callback_data="support")]
+        [InlineKeyboardButton("✅ Proceed to Payment", callback_data="checkout")],
+        [InlineKeyboardButton("⚠️ Support", callback_data="support")]
     ]
 
     if update.callback_query:
@@ -105,6 +111,7 @@ async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
+# ======================= BUTTON HANDLER =======================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -133,7 +140,6 @@ async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYP
     split = get_payment_split(total)
 
     text = f"🛍 **Order {order['order_id']}**\n**Total: ${total}**\n\n"
-
     if len(split) == 1:
         text += "Pay using the link below:"
     else:
@@ -142,7 +148,7 @@ async def show_payment_options(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard = []
     for amt in split:
         if amt in PRICE_LINKS:
-            keyboard.append([InlineKeyboardButton(f"${amt} - Payment Link", callback_data=f"pay_{amt}")])
+            keyboard.append([InlineKeyboardButton(f"💳 Pay ${amt}", callback_data=f"pay_{amt}")])
 
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back")])
 
@@ -156,20 +162,22 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     try:
         _, amount_str = data.split("_")
         amount = int(amount_str)
-        opt = PRICE_LINKS[amount]
+        link = PRICE_LINKS[amount]
     except:
         await query.edit_message_text("❌ Invalid option.")
         return
 
     text = f"💳 **Payment Link**\n**Order {order['order_id']}**\n\n"
-    text += f"Pay **${amount}** here:\n\n{opt['link']}\n\n"
+    text += f"Pay **${amount}** here:\n\n{link}\n\n"
     text += "After payment, send the proof (screenshot or receipt)."
 
     await query.edit_message_text(text)
 
+# ======================= PROOF HANDLER =======================
 async def handle_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in orders:
+        await update.message.reply_text("Please start checkout first with /start")
         return
 
     order = orders[user_id]
@@ -177,19 +185,22 @@ async def handle_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"✅ Proof received for **Order {order_id}**.\n\n{PAYMENT_PROCESSING_MSG}")
 
-    if ADMIN_USER_ID and ADMIN_USER_ID != 0:
+    if ADMIN_USER_ID:
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_USER_ID,
-                text=f"🛎 **New Payment Proof!**\n\nOrder: {order_id}\nUser: @{update.effective_user.username or 'No username'}\nTotal: ${order['subtotal']}"
+                text=f"🛎 **New Proof Received!**\n\n"
+                     f"Order: {order_id}\n"
+                     f"User: @{update.effective_user.username or user_id}\n"
+                     f"Total: ${order['subtotal']}"
             )
         except Exception as e:
-            logger.error(f"Failed to notify admin: {e}")
+            logger.error(f"Admin notify failed: {e}")
 
 # ======================= MAIN =======================
 def main():
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN environment variable is not set!")
+        logger.error("BOT_TOKEN not set!")
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -198,7 +209,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_proof))
 
-    print("✅ Lavish Checkout Bot is running on Railway...")
+    print("✅ Lavish Checkout Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
