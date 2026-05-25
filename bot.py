@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # ========================= CONFIG =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_USERNAME = "@OfficialLavishz"
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))  # Put your real numeric ID here
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))   # ← Change to your real Telegram ID
 
 PAYMENT_PROCESSING_MSG = "⏳ Payment processing. Admin will verify your payment shortly."
 
@@ -36,6 +36,7 @@ def generate_order_id():
     return f"#{order_counter}"
 
 def get_payment_split(total: int):
+    """Priority: Exact match first, then split"""
     if total in PRICE_LINKS:
         return [total]
     
@@ -56,11 +57,25 @@ def get_payment_split(total: int):
         split[-1] += remaining
     return split
 
+# ======================= MAIN MENU =======================
+async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    keyboard = [
+        [InlineKeyboardButton("💳 Checkout", callback_data="checkout")],
+        [InlineKeyboardButton("⚠️ Support", callback_data="support")]
+    ]
+    text = "👋 Welcome to **Lavish Checkout**!\n\nWhat would you like to do?"
+
+    if edit and update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
 # ======================= START =======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
 
+    # Handle deep link from website
     if args and len(args) > 0 and args[0].startswith("cart_"):
         try:
             encoded = args[0][5:]
@@ -78,16 +93,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Cart decode error: {e}")
 
-    # Normal start
-    keyboard = [
-        [InlineKeyboardButton("💳 Checkout", callback_data="checkout")],
-        [InlineKeyboardButton("⚠️ Support", callback_data="support")]
-    ]
-    await update.message.reply_text(
-        "👋 Welcome to **Lavish Checkout**!\n\nChoose an option below:", 
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    # Normal start - show main menu
+    await send_main_menu(update, context)
 
 async def show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -124,7 +131,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "checkout":
         await show_payment_options(update, context)
     elif data == "back":
-        await show_cart(update, context)
+        await send_main_menu(update, context, edit=True)
     elif data.startswith("pay_"):
         await handle_payment_selection(update, context, data)
 
@@ -167,7 +174,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ Invalid option.")
         return
 
-    text = f"💳 **Payment Link**\n**Order {order['order_id']}**\n\n"
+    text = f"💳 **Payment for Order {order['order_id']}**\n\n"
     text += f"Pay **${amount}** here:\n\n{link}\n\n"
     text += "After payment, send the proof (screenshot or receipt)."
 
@@ -177,7 +184,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
 async def handle_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in orders:
-        await update.message.reply_text("Please start checkout first with /start")
+        await update.message.reply_text("Please start an order first.")
         return
 
     order = orders[user_id]
@@ -200,7 +207,7 @@ async def handle_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================= MAIN =======================
 def main():
     if not BOT_TOKEN:
-        logger.error("BOT_TOKEN not set!")
+        logger.error("❌ BOT_TOKEN environment variable is not set!")
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
